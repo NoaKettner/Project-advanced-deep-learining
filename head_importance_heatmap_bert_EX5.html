@@ -1,0 +1,147 @@
+
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Head Importance Heatmap</title>
+<style>
+  body { font-family: system-ui, Segoe UI, Roboto, Arial; margin: 24px; }
+  .wrap { display:grid; gap:16px; max-width: 1000px; }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .card { border:1px solid #eee; border-radius:12px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.04); }
+  .legend { display:flex; gap:8px; align-items:center; }
+  .box { width:16px; height:16px; border-radius:3px; border:1px solid #ddd; }
+  .hm { overflow:auto; border:1px solid #eee; border-radius:12px; }
+  table.hm { border-collapse: collapse; }
+  table.hm td { width:18px; height:18px; padding:0; border: 1px solid #fff; position:relative; }
+  td.mark::after { content:''; position:absolute; inset:0; border:3px solid #000; border-radius:3px; } /* marked for removal */
+  .muted { color:#666; }
+  .chip { padding: 4px 8px; border-radius: 999px; background:#f6f6f6; }
+  button { padding:8px 12px; border:1px solid #ddd; background:#fafafa; border-radius:8px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Head Importance Heatmap</h1>
+  <div class="row">
+    <div class="chip">Layers: 12</div>
+    <div class="chip">Model: bert</div>
+    <div class="legend">
+      <div class="box" style="background:hsl(0, 80%, 60%)"></div><span class="muted">Low</span>
+      <div class="box" style="background:hsl(60, 80%, 60%)"></div><span class="muted">Medium</span>
+      <div class="box" style="background:hsl(120, 80%, 40%)"></div><span class="muted">High</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <label>Pruning ratio per layer:
+        <input id="ratio" type="range" min="0" max="0.6" step="0.05" value="0.25" style="vertical-align:middle;">
+        <span id="ratioVal">25%</span>
+      </label>
+      <button id="downloadBtn">Download heads_to_prune.json</button>
+      <span class="muted">Always mark for removal the heads with the lowest scores in each layer.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="chip" id="summary"></div>
+    </div>
+    <div class="hm">
+      <table id="heat" class="hm"></table>
+    </div>
+    <small>Rows = layers (0 at top), columns = heads. Color = importance (green high, red low). Black border = will be pruned.</small>
+  </div>
+</div>
+
+<script>
+const SCORES = {"0": [7.62481689453125, 8.660351753234863, 10.145271301269531, 8.006150245666504, 7.650569915771484, 9.276079177856445, 7.332273483276367, 8.41616439819336, 7.873626708984375, 8.656183242797852, 9.46931266784668, 10.06464672088623], "1": [8.613956451416016, 9.822164535522461, 8.850825309753418, 8.18588638305664, 9.022438049316406, 8.938514709472656, 7.7106852531433105, 8.171432495117188, 8.041088104248047, 8.209234237670898, 8.52740478515625, 7.787684440612793], "2": [11.631649017333984, 9.901178359985352, 8.509416580200195, 7.854638576507568, 8.545698165893555, 7.905770778656006, 8.118207931518555, 8.163322448730469, 8.459818840026855, 11.654181480407715, 8.468759536743164, 7.90338134765625], "3": [9.256492614746094, 7.803645133972168, 8.88303279876709, 7.939311981201172, 8.178525924682617, 9.477825164794922, 8.896933555603027, 8.336058616638184, 8.533527374267578, 9.211750030517578, 8.84778881072998, 8.028913497924805], "4": [8.923108100891113, 7.294240474700928, 9.32474136352539, 9.879592895507812, 8.692115783691406, 8.639387130737305, 8.772676467895508, 9.312112808227539, 8.51212215423584, 8.46826457977295, 8.215194702148438, 8.873909950256348], "5": [8.366024017333984, 9.826069831848145, 8.56889533996582, 8.751382827758789, 8.489644050598145, 9.475164413452148, 9.48482894897461, 9.375551223754883, 8.35364818572998, 8.763553619384766, 8.216979026794434, 9.218620300292969], "6": [9.41353988647461, 9.028993606567383, 8.370397567749023, 8.871606826782227, 8.735876083374023, 8.72652816772461, 8.419713973999023, 8.651773452758789, 8.776281356811523, 8.03380012512207, 9.368329048156738, 8.769929885864258], "7": [8.187885284423828, 8.577205657958984, 8.536020278930664, 9.037903785705566, 9.179082870483398, 8.367793083190918, 9.141474723815918, 9.093213081359863, 8.377691268920898, 8.585460662841797, 8.887896537780762, 8.97380256652832], "8": [9.171056747436523, 8.727713584899902, 9.662235260009766, 8.798582077026367, 9.378443717956543, 9.26785945892334, 9.131959915161133, 8.97237777709961, 8.455781936645508, 8.756305694580078, 9.038970947265625, 8.839761734008789], "9": [9.322765350341797, 9.437182426452637, 8.797913551330566, 9.087789535522461, 9.413622856140137, 8.721603393554688, 9.832331657409668, 9.262361526489258, 9.216047286987305, 9.663050651550293, 9.084637641906738, 9.204204559326172], "10": [9.131983757019043, 9.749679565429688, 9.11870288848877, 9.202432632446289, 8.925836563110352, 10.038939476013184, 9.090035438537598, 9.07382583618164, 9.657294273376465, 10.088932037353516, 9.259440422058105, 9.199302673339844], "11": [9.725886344909668, 9.285293579101562, 9.500445365905762, 9.84980297088623, 9.552589416503906, 9.720587730407715, 9.15225887298584, 9.21454906463623, 10.302871704101562, 9.627022743225098, 9.42627239227295, 9.459409713745117]};
+const META   = {"model_type": "bert", "n_layers": 12, "heads_per_layer": {"0": 12, "1": 12, "2": 12, "3": 12, "4": 12, "5": 12, "6": 12, "7": 12, "8": 12, "9": 12, "10": 12, "11": 12}, "note": "Scores are avg L2 of Q/K/V per head (higher = more important)."};
+
+const ratio    = document.getElementById('ratio');
+const ratioVal = document.getElementById('ratioVal');
+const heat     = document.getElementById('heat');
+const summary  = document.getElementById('summary');
+const dlBtn    = document.getElementById('downloadBtn');
+
+function colorFor(v, vmin, vmax) {
+  // Map red→green without template literals (to avoid conflict with Python f-strings)
+  var t = (v - vmin) / Math.max(1e-9, (vmax - vmin));
+  var hue = 120 * t; // 0=red, 120=green
+  return 'hsl(' + hue + ', 80%, ' + (40 + 20*(1 - t)) + '%)';
+}
+
+function build() {
+  heat.innerHTML = '';
+  var nl = META.n_layers;
+  var totalHeads = 0, totalPruned = 0;
+
+  // Global range for all cells (could also be per-layer)
+  var globalMin = Infinity, globalMax = -Infinity;
+  for (const li in SCORES) {
+    for (const s of SCORES[li]) {
+      if (s < globalMin) globalMin = s;
+      if (s > globalMax) globalMax = s;
+    }
+  }
+
+  var r = parseFloat(ratio.value);
+  ratioVal.textContent = Math.round(r*100) + '%';
+
+  for (var li=0; li<nl; li++) {
+    var row = document.createElement('tr');
+    var scores = SCORES[li];
+    if (!scores) continue;
+
+    var H = scores.length;
+    var k = Math.max(0, Math.min(H, Math.round(H * r)));
+    totalHeads += H;
+
+    // Indices by ascending value
+    var order = scores.map(function(v,idx){return [v,idx];}).sort(function(a,b){return a[0]-b[0];}).map(function(x){return x[1];});
+    var toPrune = new Set(order.slice(0, k));
+    totalPruned += k;
+
+    for (var h=0; h<H; h++) {
+      var td = document.createElement('td');
+      td.style.background = colorFor(scores[h], globalMin, globalMax);
+      if (toPrune.has(h)) td.classList.add('mark');
+      td.title = 'layer ' + li + ', head ' + h + ', score ' + scores[h].toFixed(4) + (toPrune.has(h) ? ' (PRUNE)' : ' (KEEP)');
+      row.appendChild(td);
+    }
+    heat.appendChild(row);
+  }
+
+  summary.textContent = 'Total heads: ' + totalHeads + ' | To prune by ratio: ' + totalPruned;
+}
+
+function download() {
+  var nl = META.n_layers;
+  var r = parseFloat(ratio.value);
+  var out = {};
+  for (var li=0; li<nl; li++) {
+    var scores = SCORES[li];
+    if (!scores) continue;
+    var H = scores.length;
+    var k = Math.max(0, Math.min(H, Math.round(H * r)));
+    if (k === 0) continue;
+    var order = scores.map(function(v,idx){return [v,idx];}).sort(function(a,b){return a[0]-b[0];}).map(function(x){return x[1];});
+    out[li] = Array.from(order.slice(0, k));
+  }
+  var blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'heads_to_prune.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+ratio.addEventListener('input', build);
+dlBtn.addEventListener('click', download);
+build();
+</script>
+</body>
+</html>
